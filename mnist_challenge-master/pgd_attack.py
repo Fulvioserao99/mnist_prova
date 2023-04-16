@@ -17,7 +17,7 @@ class LinfPGDAttack:
     self.rand = random_start
 
     if loss_func == 'xent':
-      loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+      self.loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
     elif loss_func == 'cw':
       label_mask = tf.one_hot(model.y_input,
                               10,
@@ -27,32 +27,35 @@ class LinfPGDAttack:
       correct_logit = tf.reduce_sum(label_mask * model.pre_softmax, axis=1)
       wrong_logit = tf.reduce_max((1-label_mask) * model.pre_softmax
                                   - 1e4*label_mask, axis=1)
-      loss = -tf.nn.relu(correct_logit - wrong_logit + 50)
+      self.loss = -tf.nn.relu(correct_logit - wrong_logit + 50)
     else:
       print('Funzione di perdita sconosciuta. Si utilizza la cross-entropy per default')
-      loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
-
-    self.grad = tf.GradientTape(loss, model.x_input)
-
-  def perturb(self, x_nat, y, sess):
+      self.loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+      
+  
+  
+  def perturb(self, x_nat, y):
     """Dato un set di esempi (x_nat, y), restituisce un set di esempi avversari
        entro epsilon di x_nat in norma l_infinity."""
     if self.rand:
-      x = x_nat + np.random.uniform(-self.epsilon, self.epsilon, x_nat.shape)
-      x = np.clip(x, 0, 1) # assicura un range di pixel valido
+      x = tf.Variable(x_nat) + tf.cast(tf.random.uniform(x_nat.shape, -self.epsilon, self.epsilon), tf.float32)
+      x = tf.clip_by_value(x, 0, 1) # assicura un range di pixel valido
     else:
-      x = np.copy(x_nat)
+      x = tf.Variable(x_nat)
 
     for i in range(self.k):
-      grad = sess.run(self.grad, feed_dict={self.model.x_input: x,
-                                            self.model.y_input: y})
+      with tf.GradientTape() as tape:
+        tape.watch(x)
+        loss = self.loss(y, self.model(x))
+      grad = tape.gradient(loss, x)
 
-      x += self.a * np.sign(grad)
+      x += self.a * tf.sign(grad)
 
-      x = np.clip(x, x_nat - self.epsilon, x_nat + self.epsilon) 
-      x = np.clip(x, 0, 1) # assicura un range di pixel valido
+      x = tf.clip_by_value(x, x_nat - self.epsilon, x_nat + self.epsilon) 
+      x = tf.clip_by_value(x, 0, 1) # assicura un range di pixel valido
 
     return x
+
 
 
 if __name__ == '__main__':
@@ -60,13 +63,19 @@ if __name__ == '__main__':
   import sys
   import math
 
-  from tensorflow.keras.datasets import mnist
-
+  
   from model import Model
 
   # Caricamento delle impostazioni di configurazione
   with open('config.json') as config_file:
     config = json.load(config_file)
+
+
+  model_file = tf.train.latest_checkpoint(config['model_dir'])
+  if model_file is None:
+    print('No model found')
+    sys.exit()
+
 
   # Caricamento del modello salvato
   model = Model()
@@ -76,7 +85,8 @@ if __name__ == '__main__':
                          config['a'],
                          config['random_start'],
                          config['loss_func'])
-  saver = tf.compat.v1.train.Saver()
+  saver = tf.keras.Model.save_weights(model,'savers/my_model_weights')
+  
 
 
 # Caricamento del dataset MNIST
@@ -111,7 +121,7 @@ print('Test accuracy:', test_acc)
 
 # Attacco di LinfPGD sul test set
 attack = LinfPGDAttack(model=model, epsilon=0.1, k=40, a=0.01, random_start=True, loss_func='ce')
-adv_x_test = attack.perturb(x_test, y_test, sess)
+adv_x_test = attack.perturb(x_test, y_test)
 
 # Valutazione del modello sull'insieme di test avversario
 test_loss_adv, test_acc_adv = model.evaluate(adv_x_test, y_test, verbose=2)
