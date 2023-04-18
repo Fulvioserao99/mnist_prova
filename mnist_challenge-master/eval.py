@@ -15,7 +15,7 @@ import sys
 import time
 
 import tensorflow as tf
-from tensorflow.examples.tutorials.mnist import input_data
+from tensorflow.keras.datasets import mnist
 
 from model import Model
 from pgd_attack import LinfPGDAttack
@@ -29,8 +29,10 @@ eval_on_cpu = config['eval_on_cpu']
 
 model_dir = config['model_dir']
 
-# Set upd the data, hyperparameters, and the model
-mnist = input_data.read_data_sets('MNIST_data', one_hot=False)
+# Set up the data, hyperparameters, and the model
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_test = x_test.reshape(-1, 784).astype('float32') / 255.0
+y_test = y_test.astype('int32')
 
 if eval_on_cpu:
   with tf.device("/cpu:0"):
@@ -50,7 +52,7 @@ else:
                          config['random_start'],
                          config['loss_func'])
 
-global_step = tf.contrib.framework.get_or_create_global_step()
+global_step = tf.Variable(0, trainable=False, dtype=tf.int64)
 
 # Setting up the Tensorboard and checkpoint outputs
 if not os.path.exists(model_dir):
@@ -62,62 +64,56 @@ if not os.path.exists(eval_dir):
 last_checkpoint_filename = ''
 already_seen_state = False
 
-saver = tf.train.Saver()
-summary_writer = tf.summary.FileWriter(eval_dir)
-
 # A function for evaluating a single checkpoint
 def evaluate_checkpoint(filename):
-  with tf.Session() as sess:
-    # Restore the checkpoint
-    saver.restore(sess, filename)
+  # Restore the checkpoint
+  model.load_weights(filename)
 
-    # Iterate over the samples batch-by-batch
-    num_batches = int(math.ceil(num_eval_examples / eval_batch_size))
-    total_xent_nat = 0.
-    total_xent_adv = 0.
-    total_corr_nat = 0
-    total_corr_adv = 0
+  # Iterate over the samples batch-by-batch
+  num_batches = int(math.ceil(num_eval_examples / eval_batch_size))
+  total_xent_nat = 0.
+  total_xent_adv = 0.
+  total_corr_nat = 0
+  total_corr_adv = 0
 
-    for ibatch in range(num_batches):
-      bstart = ibatch * eval_batch_size
-      bend = min(bstart + eval_batch_size, num_eval_examples)
+  for ibatch in range(num_batches):
+    bstart = ibatch * eval_batch_size
+    bend = min(bstart + eval_batch_size, num_eval_examples)
 
-      x_batch = mnist.test.images[bstart:bend, :]
-      y_batch = mnist.test.labels[bstart:bend]
+    x_batch = x_test[bstart:bend, :]
+    y_batch = y_test[bstart:bend]
 
-      dict_nat = {model.x_input: x_batch,
-                  model.y_input: y_batch}
+    dict_nat = {model.x_input: x_batch,
+                model.y_input: y_batch}
 
-      x_batch_adv = attack.perturb(x_batch, y_batch, sess)
+    x_batch_adv = attack.perturb(x_batch, y_batch)
 
-      dict_adv = {model.x_input: x_batch_adv,
-                  model.y_input: y_batch}
+    dict_adv = {model.x_input: x_batch_adv,
+                model.y_input: y_batch}
 
-      cur_corr_nat, cur_xent_nat = sess.run(
-                                      [model.num_correct,model.xent],
-                                      feed_dict = dict_nat)
-      cur_corr_adv, cur_xent_adv = sess.run(
-                                      [model.num_correct,model.xent],
-                                      feed_dict = dict_adv)
+    cur_corr_nat, cur_xent_nat = model.evaluate(
+                                    x_batch, y_batch, verbose=0)
+    cur_corr_adv, cur_xent_adv = model.evaluate(
+                                    x_batch_adv, y_batch, verbose=0)
 
-      total_xent_nat += cur_xent_nat
-      total_xent_adv += cur_xent_adv
-      total_corr_nat += cur_corr_nat
-      total_corr_adv += cur_corr_adv
+    total_xent_nat += cur_xent_nat
+    total_xent_adv += cur_xent_adv
+    total_corr_nat += cur_corr_nat
+    total_corr_adv += cur_corr_adv
 
-    avg_xent_nat = total_xent_nat / num_eval_examples
-    avg_xent_adv = total_xent_adv / num_eval_examples
-    acc_nat = total_corr_nat / num_eval_examples
-    acc_adv = total_corr_adv / num_eval_examples
+  avg_xent_nat = total_xent_nat / num_eval_examples
+  avg_xent_adv = total_xent_adv / num_eval_examples
+  acc_nat = total_corr_nat / num_eval_examples
+  acc_adv = total_corr_adv / num_eval_examples
 
-    summary = tf.Summary(value=[
-          tf.Summary.Value(tag='xent adv eval', simple_value= avg_xent_adv),
-          tf.Summary.Value(tag='xent adv', simple_value= avg_xent_adv),
-          tf.Summary.Value(tag='xent nat', simple_value= avg_xent_nat),
-          tf.Summary.Value(tag='accuracy adv eval', simple_value= acc_adv),
-          tf.Summary.Value(tag='accuracy adv', simple_value= acc_adv),
-          tf.Summary.Value(tag='accuracy nat', simple_value= acc_nat)])
-    summary_writer.add_summary(summary, global_step.eval(sess))
+  with summary_writer.as_default():
+    tf.summary.scalar('xent adv eval', avg_xent_adv, step=global_step)
+    tf.summary.scalar('xent adv', avg_xent_adv, step=global_step)
+    tf.Summary.Value('xent nat', avg_xent_nat, step=global_step),
+    tf.Summary.Value('accuracy adv eval', acc_adv, step=global_step),
+    tf.Summary.Value('accuracy adv', acc_adv, step=global_step),
+    tf.Summary.Value('accuracy nat', acc_nat, step=global_step)
+    summary_writer.flush()
 
     print('natural: {:.2f}%'.format(100 * acc_nat))
     print('adversarial: {:.2f}%'.format(100 * acc_adv))
