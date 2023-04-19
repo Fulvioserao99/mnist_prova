@@ -1,0 +1,2 @@
+model_checkpoint_path: "savers"
+all_model_checkpoint_paths: "savers"
