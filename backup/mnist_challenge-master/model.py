@@ -24,8 +24,8 @@ class Model(tf.keras.Model):
     h_pool2_flat = tf.reshape(h_pool2, [-1, 7 * 7 * 64])
     h_fc1 = self.fc1(h_pool2_flat)
     pre_softmax = self.fc2(h_fc1)
-    y_xent = tf.keras.losses.SparseCategoricalCrossentropy(
-    labels=self.y_input, logits=pre_softmax)
+    loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+    y_xent = loss_fn(y_true=self.y_input, y_pred=pre_softmax)
     xent = tf.reduce_sum(y_xent)
     y_pred = tf.argmax(pre_softmax, 1)
     correct_prediction = tf.equal(y_pred, self.y_input)
