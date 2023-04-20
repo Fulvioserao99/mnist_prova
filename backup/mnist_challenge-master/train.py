@@ -92,14 +92,14 @@ def train_step(x_batch, y_batch):
         # Compute logits for natural inputs
         logits_nat = model(nat_dict['x_input'], training=True)
         # Compute loss for natural inputs
-        loss_nat = tf.keras.losses.sparse_categorical_crossentropy(
+        loss_nat = tf.keras.losses.categorical_crossentropy(
             nat_dict['y_input'], logits_nat, from_logits=True)
         loss_nat = tf.reduce_mean(loss_nat)
 
         # Compute logits for adversarial inputs
         logits_adv = model(adv_dict['x_input'], training=True)
         # Compute loss for adversarial inputs
-        loss_adv = tf.keras.losses.sparse_categorical_crossentropy(
+        loss_adv = tf.keras.losses.categorical_crossentropy(
             adv_dict['y_input'], logits_adv, from_logits=True)
         loss_adv = tf.reduce_mean(loss_adv)
 
@@ -139,8 +139,8 @@ def train_step(x_batch, y_batch):
 
 training_time = 0
 start = timer()
-for x_batch, y_batch in mnist_train:
-    train_step(x_batch,y_batch)
+for x_train, y_train in mnist_train:
+    train_step(x_train,y_train)
 
 end = timer()
 

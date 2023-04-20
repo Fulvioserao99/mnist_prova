@@ -3,7 +3,7 @@ class Model(tf.keras.Model):
   def __init__(self):
     super(Model, self).__init__()
     self.x_input = tf.keras.layers.Input(shape=(784,), dtype=tf.float32)
-    self.y_input = tf.keras.layers.Input(shape=(), dtype=tf.float32)
+    self.y_input = tf.keras.layers.Input(shape=(), dtype=tf.int64)
     self.x_image = tf.reshape(self.x_input, [-1, 28, 28, 1])
     # first convolutional layer
     self.conv1 = tf.keras.layers.Conv2D(32, (5, 5), activation='relu', padding='same')
@@ -24,7 +24,7 @@ class Model(tf.keras.Model):
     h_pool2_flat = tf.reshape(h_pool2, [-1, 7 * 7 * 64])
     h_fc1 = self.fc1(h_pool2_flat)
     pre_softmax = self.fc2(h_fc1)
-    y_xent = tf.nn.sparse_softmax_cross_entropy_with_logits(
+    y_xent = tf.keras.losses.SparseCategoricalCrossentropy(
     labels=self.y_input, logits=pre_softmax)
     xent = tf.reduce_sum(y_xent)
     y_pred = tf.argmax(pre_softmax, 1)
