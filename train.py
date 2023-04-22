@@ -120,26 +120,28 @@ def train_step(x_batch, y_batch):
     end = timer()
     training_time += end - start
 
-    nat_dict = {x_input.ref(): x_batch,
-                y_input.ref(): y_batch}
+    x_key = x_input.ref()
+    y_key = y_input.ref()
+    nat_dict = {x_key: x_batch,
+                y_key: y_batch}
 
-    adv_dict = {x_input.ref(): x_batch_adv,
-                y_input.ref(): y_batch}
+    adv_dict = {x_key: x_batch_adv,
+                y_key: y_batch}
 
 
     with tf.GradientTape() as tape:
         # Compute logits for natural inputs
-        logits_nat = model(nat_dict['x_input'], training=True)
+        logits_nat = model(nat_dict['x_key'], training=True)
         # Compute loss for natural inputs
         loss_nat = tf.keras.losses.categorical_crossentropy(
-            nat_dict['y_input'], logits_nat, from_logits=True)
+            nat_dict['y_key'], logits_nat, from_logits=True)
         loss_nat = tf.reduce_mean(loss_nat)
 
         # Compute logits for adversarial inputs
-        logits_adv = model(adv_dict['x_input'], training=True)
+        logits_adv = model(adv_dict['x_key'], training=True)
         # Compute loss for adversarial inputs
         loss_adv = tf.keras.losses.categorical_crossentropy(
-            adv_dict['y_input'], logits_adv, from_logits=True)
+            adv_dict['y_key'], logits_adv, from_logits=True)
         loss_adv = tf.reduce_mean(loss_adv)
 
         # Compute total loss
@@ -150,8 +152,8 @@ def train_step(x_batch, y_batch):
 
     # Output to stdout
     if global_step % num_output_steps == 0:
-        nat_acc = evaluate(model, nat_dict['.x_input'], nat_dict['y_input'])
-        adv_acc = evaluate(model, adv_dict['x_input'], adv_dict['y_input'])
+        nat_acc = evaluate(model, nat_dict['.x_key'], nat_dict['y_key'])
+        adv_acc = evaluate(model, adv_dict['x_key'], adv_dict['y_key'])
         print('Step {}:    ({})'.format(global_step, datetime.now()))
         print('    training nat accuracy {:.4}%'.format(nat_acc * 100))
         print('    training adv accuracy {:.4}%'.format(adv_acc * 100))
@@ -167,8 +169,8 @@ def train_step(x_batch, y_batch):
                 save_format='tf',
                 options=tf.saved_model.SaveOptions(experimental_io_device='/job:localhost'))
     
-    train_accuracy_adv.update_state(tf.argmax(nat_dict['y_input'], axis=1), tf.argmax(logits_nat, axis=1))
-    test_accuracy_adv.update_state(tf.argmax(adv_dict['y_input'], axis=1), tf.argmax(logits_adv, axis=1))
+    train_accuracy_adv.update_state(tf.argmax(nat_dict['y_key'], axis=1), tf.argmax(logits_nat, axis=1))
+    test_accuracy_adv.update_state(tf.argmax(adv_dict['y_key'], axis=1), tf.argmax(logits_adv, axis=1))
     xent_adv_train.update_state(loss_nat/batch_size)
     xent_adv.update_state(loss_adv/batch_size)
 
