@@ -155,8 +155,8 @@ def train_step(x_batch, y_batch):
         nat_acc = evaluate(model, nat_dict[x_key], nat_dict[y_key])
         adv_acc = evaluate(model, adv_dict[x_key], adv_dict[y_key])
         print('Step {}:    ({})'.format(global_step, datetime.now()))
-        print('    training nat accuracy {:.4}%'.format(nat_acc * 100))
-        print('    training adv accuracy {:.4}%'.format(adv_acc * 100))
+        print('    training nat accuracy {:.4}%'.format(nat_acc.numpy() * 100))
+        print('    training adv accuracy {:.4}%'.format(adv_acc.numpy() * 100))
         if global_step != 0:
             print('    {} examples per second'.format(
                 num_output_steps * batch_size / training_time))
