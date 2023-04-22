@@ -2,18 +2,46 @@ import tensorflow as tf
 from datetime import datetime
 import json
 import os
-import shutil
+from model import Model
 import numpy as np
 from timeit import default_timer as timer
-
-from model import Model
 from pgd_attack import LinfPGDAttack
+
+'''# Costruzione del modello
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Conv2D(32, (5,5), activation='relu', padding='same', input_shape=(28,28,1)),
+    tf.keras.layers.MaxPooling2D((2,2)),
+    tf.keras.layers.Conv2D(64, (5,5), activation='relu', padding='same'),
+    tf.keras.layers.MaxPooling2D((2,2)),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(1024, activation='relu'),
+    tf.keras.layers.Dense(10)
+])'''
+x_input = tf.keras.layers.Input(shape=(28,28,1), dtype=tf.float32)
+y_input = tf.keras.layers.Input(shape=(10,), dtype=tf.int64)
+x_image = tf.reshape(x_input, [-1, 28, 28, 1])
+# convolutional layers
+conv1 = tf.keras.layers.Conv2D(32, (5, 5), activation='relu', padding='same')(x_image)
+pool1 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)(conv1)
+conv2 = tf.keras.layers.Conv2D(64, (5, 5), activation='relu', padding='same')(pool1)
+pool2 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)(conv2)
+# flatten layer
+flatten = tf.keras.layers.Flatten()(pool2)
+# fully connected layers
+fc1 = tf.keras.layers.Dense(1024, activation='relu')(flatten)
+# output layer
+output = tf.keras.layers.Dense(10)(fc1)
+
+model = tf.keras.models.Model(inputs=[x_input], outputs=output)
 
 @tf.function
 def evaluate(model, x, y):
     predictions = model(x)
     accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(predictions, axis=1), tf.argmax(y, axis=1)), tf.float32))
     return accuracy
+
+
+
 
 with open('config.json') as config_file:
     config = json.load(config_file)
@@ -28,19 +56,19 @@ batch_size = config['training_batch_size']
 
 # Setting up the data and the model
 (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
-x_train = x_train.astype('float32') / 255
-x_test = x_test.astype('float32') / 255
-x_train = tf.reshape(x_train,(-1, 28, 28, 1))
-x_test = tf.reshape(x_test,(-1, 28, 28, 1))
+x_train = np.expand_dims(x_train.astype(np.float32) / 255.0, axis=-1)
 y_train = tf.keras.utils.to_categorical(y_train, num_classes=10)
+x_test = np.expand_dims(x_test.astype(np.float32) / 255.0, axis=-1)
 y_test = tf.keras.utils.to_categorical(y_test, num_classes=10)
-mnist_train = tf.data.Dataset.from_tensor_slices((x_train, y_train)).batch(batch_size)
+mnist_train = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+mnist_train = mnist_train.shuffle(buffer_size=1024).batch(batch_size)
 global_step = tf.Variable(0, trainable=False, dtype=tf.int64)
-model = Model()
+
+
 
 # Compilazione del modello
-model.compile(optimizer='adam',
-              loss='categorical_crossentropy',
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+              loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True),
               metrics=['accuracy'])
 
 
@@ -52,6 +80,7 @@ attack = LinfPGDAttack(model,
                        config['a'],
                        config['random_start'],
                        config['loss_func'])
+saver = tf.keras.Model.save_weights(model,'savers/my_model_weights')
 
 
 # Setting up the Tensorboard and checkpoint outputs
@@ -86,15 +115,17 @@ def train_step(x_batch, y_batch):
 
         # Compute Adversarial Perturbations
     start = timer()
-    x_batch_adv = attack.perturb(x_batch, y_batch)
+    print('prima della perturb')
+    x_batch_adv = attack.perturb(x_batch,y_batch)
     end = timer()
     training_time += end - start
 
-    nat_dict = {model.x_input: x_batch,
-                model.y_input: y_batch}
+    nat_dict = {x_input.ref(): x_batch,
+                y_input.ref(): y_batch}
 
-    adv_dict = {model.x_input: x_batch_adv,
-                model.y_input: y_batch}
+    adv_dict = {x_input.ref(): x_batch_adv,
+                y_input.ref(): y_batch}
+
 
     with tf.GradientTape() as tape:
         # Compute logits for natural inputs
@@ -116,7 +147,6 @@ def train_step(x_batch, y_batch):
 
     # Compute gradients and update weights
     gradients = tape.gradient(loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
     # Output to stdout
     if global_step % num_output_steps == 0:
@@ -147,8 +177,8 @@ def train_step(x_batch, y_batch):
 
 training_time = 0
 start = timer()
-for x_train, y_train in mnist_train:
-    train_step(x_train,y_train)
+for step, (x_train, y_train) in enumerate(mnist_train):
+    train_step(x_batch = x_train,y_batch = y_train)
 
 end = timer()
 
