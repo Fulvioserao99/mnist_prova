@@ -152,7 +152,7 @@ def train_step(x_batch, y_batch):
 
     # Output to stdout
     if global_step % num_output_steps == 0:
-        nat_acc = evaluate(model, nat_dict['.x_key'], nat_dict['y_key'])
+        nat_acc = evaluate(model, nat_dict['x_key'], nat_dict['y_key'])
         adv_acc = evaluate(model, adv_dict['x_key'], adv_dict['y_key'])
         print('Step {}:    ({})'.format(global_step, datetime.now()))
         print('    training nat accuracy {:.4}%'.format(nat_acc * 100))
