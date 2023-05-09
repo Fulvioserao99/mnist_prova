@@ -85,18 +85,18 @@ writer = tf.summary.create_file_writer("tmp/mylogs")
 def training(x_batch,y_batch):
     with tf.GradientTape() as tape:
 
-        # Compute logits for adversarial inputs
-        logits_adv = model(x_batch, training=True)
-        # Compute loss for adversarial inputs
-        loss_adv = model.loss(
-            y_batch, logits_adv)
+        # Compute logits 
+        logits = model(x_batch, training=True)
+        # Compute loss 
+        loss = model.loss(
+            y_batch, logits)
         
 
     # Compute gradients and update weights
-    gradients = tape.gradient(loss_adv, model.trainable_variables)
+    gradients = tape.gradient(loss, model.trainable_variables)
     optimizer.apply_gradients(zip(gradients, model.trainable_weights))
 
-    return logits_adv,loss_adv
+    return logits,loss
 
 
 
