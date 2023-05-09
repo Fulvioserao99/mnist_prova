@@ -8,19 +8,7 @@ import json
 
 
 
-'''# Costruzione del modello
-model = tf.keras.models.Sequential([
-    tf.keras.layers.Conv2D(32, (5,5), activation='relu', padding='same', input_shape=(28,28,1)),
-    tf.keras.layers.MaxPooling2D((2,2)),
-    tf.keras.layers.Conv2D(64, (5,5), activation='relu', padding='same'),
-    tf.keras.layers.MaxPooling2D((2,2)),
-    tf.keras.layers.Flatten(),
-    tf.keras.layers.Dense(1024, activation='relu'),
-    tf.keras.layers.Dense(10)
-])'''
-
-#model = Model()
-
+# Costruzione del modello
 x_input = tf.keras.layers.Input(shape=(28,28,1), dtype=tf.float32)
 y_input = tf.keras.layers.Input(shape=(10,), dtype=tf.int64)
 x_image = tf.reshape(x_input, [-1, 28, 28, 1])
@@ -121,9 +109,6 @@ if __name__ == '__main__':
 
 
   
-  # Costruzione del modello
-  #model = Model()
-  
   attack = LinfPGDAttack(model,
                          config['epsilon'],
                          config['k'],
@@ -144,8 +129,6 @@ x_train = np.expand_dims(x_train.astype(np.float32) / 255.0, axis=-1)
 y_train = tf.keras.utils.to_categorical(y_train, num_classes=10)
 x_test = np.expand_dims(x_test.astype(np.float32) / 255.0, axis=-1)
 y_test = tf.keras.utils.to_categorical(y_test, num_classes=10)
-#y_train = tf.one_hot(y_train, depth=10)
-#y_test = tf.one_hot(y_test, depth=10)
 
 
 '''# Addestramento del modello
@@ -162,18 +145,3 @@ adv_x_test = attack.perturb(x_test, y_test)
 # Valutazione del modello sull'insieme di test avversario
 test_loss_adv, test_acc_adv = model.evaluate(adv_x_test, y_test, verbose=2)
 print('Test accuracy on adversarial examples:', test_acc_adv)'''
-
-'''    self.x_input = tf.keras.layers.Input(shape=(784,), dtype=tf.float32)
-    self.y_input = tf.keras.layers.Input(shape=(10,), dtype=tf.int64)
-    self.x_image = tf.reshape(self.x_input, [-1, 28, 28, 1])
-    # first convolutional layer
-    self.conv1 = tf.keras.layers.Conv2D(32, (5, 5), activation='relu', padding='same')
-    self.pool1 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)
-    # second convolutional layer
-    self.conv2 = tf.keras.layers.Conv2D(64, (5, 5), activation='relu', padding='same')
-    self.pool2 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)
-    
-  # first fully connected layer
-    self.fc1 = tf.keras.layers.Dense(1024, activation='relu')
-    # output layer
-    self.fc2 = tf.keras.layers.Dense(10)'''
