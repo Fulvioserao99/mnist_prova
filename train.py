@@ -2,7 +2,7 @@ import tensorflow as tf
 from datetime import datetime
 import json
 import os
-import pickle 
+ 
 
 import numpy as np
 from timeit import default_timer as timer
@@ -17,10 +17,9 @@ import os
 import pickle 
     
 # Model building
-x_input = tf.keras.layers.Input(shape=(4288, 2848, 3), dtype=tf.float32)
-y_input = tf.keras.layers.Input(shape=(2,), dtype=tf.int64)
-x_image_resized = tf.image.resize(x_input, [100, 100])
-conv1 = tf.keras.layers.Conv2D(32, (5, 5), activation='relu', padding='same')(x_image_resized)
+x_input = tf.keras.layers.Input(shape=(100, 100, 3), dtype=tf.float32)
+y_input = tf.keras.layers.Input(shape=(10,), dtype=tf.int64)
+conv1 = tf.keras.layers.Conv2D(32, (5, 5), activation='relu', padding='same')(x_input)
 pool1 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)(conv1)
 conv2 = tf.keras.layers.Conv2D(64, (5, 5), activation='relu', padding='same')(pool1)
 pool2 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)(conv2)
@@ -40,14 +39,18 @@ num_checkpoint_steps = config['num_checkpoint_steps']
 batch_size = config['training_batch_size']
 
 # Setting up the data and the model
-a = MasterImage(PATH='/home/lucapezz/Scrivania/Tirocinio/CHIDataset/IC_190/imgs', IMAGE_SIZE=100)
-b = MasterImage2(PATH='/home/lucapezz/Scrivania/Tirocinio/CHIDataset/IC_191/imgs', IMAGE_SIZE=100)
+a = MasterImage(PATH=r'E:\dataset\actual', IMAGE_SIZE=100)
+b = MasterImage2(PATH=r'E:\dataset\training', IMAGE_SIZE=100)
 (x_train, y_train) = a.load_dataset() 
 (x_test, y_test) = b.load_dataset() 
-x_train = np.expand_dims(x_train.astype(np.float32) / 255.0, axis=-1)
-y_train = tf.one_hot(y_train, depth=2)
-x_test = np.expand_dims(x_test.astype(np.float32) / 255.0, axis=-1)
-y_test = tf.one_hot(y_test, depth=2)
+x_train = tf.convert_to_tensor(x_train, dtype=tf.float32)
+#x_train = np.expand_dims(x_train.astype(np.float32) / 255.0, axis=-1)
+y_train = tf.one_hot(y_train, depth=10)
+
+x_test = tf.convert_to_tensor(x_test, dtype=tf.float32)
+#x_test = np.expand_dims(x_test.astype(np.float32) / 255.0, axis=-1)
+y_test = tf.one_hot(y_test, depth=10)
+
 unisa_train = tf.data.Dataset.from_tensor_slices((x_train, y_train))
 unisa_train = unisa_train.shuffle(buffer_size=1024).batch(batch_size)
 global_step = tf.Variable(0, trainable=False, dtype=tf.int64)
@@ -143,7 +146,7 @@ for epoch in range(10):
         x_batch_adv = attack.perturb(x_train, y_train)
         end_t = timer()
         t_time += end_t - start_t
-        train_step(x_batch=x_train, y_batch=y_train, x_batch_adv=x_batch_adv, time=t_time, step=0)
+        train_step(x_batch=x_train, y_batch=y_train, x_batch_adv=x_batch_adv, time=t_time, step=step)
         test_accuracy_adv.reset_states()
         test_accuracy_nat.reset_states()
         writer.flush()
