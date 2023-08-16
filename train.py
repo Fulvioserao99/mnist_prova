@@ -3,8 +3,6 @@ from datetime import datetime
 import json
 import os
  
-
-import numpy as np
 from timeit import default_timer as timer
 from pgd_attack import LinfPGDAttack
 from pippo import MasterImage
@@ -13,8 +11,6 @@ from pippo import MasterImage2
 import tensorflow as tf
 from datetime import datetime
 import json
-import os
-import pickle 
     
 # Model building
 x_input = tf.keras.layers.Input(shape=(100, 100, 3), dtype=tf.float32)
@@ -26,7 +22,7 @@ pool2 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)(conv2)
 flatten = tf.keras.layers.Flatten()(pool2)
 fc1 = tf.keras.layers.Dense(1024, activation='relu')(flatten)
 output = tf.keras.layers.Dense(10)(fc1)
-model = tf.keras.models.Model(inputs=[x_input], outputs=output)
+model = tf.keras.models.Model(inputs=[x_input], outputs=output,name="my_model")
 
 with open('config.json') as config_file:
     config = json.load(config_file)
@@ -39,8 +35,8 @@ num_checkpoint_steps = config['num_checkpoint_steps']
 batch_size = config['training_batch_size']
 
 # Setting up the data and the model
-a = MasterImage(PATH=r'E:\dataset\actual', IMAGE_SIZE=100)
-b = MasterImage2(PATH=r'E:\dataset\training', IMAGE_SIZE=100)
+a = MasterImage(PATH=r'/home/lucapezz/Scrivania/Tirocinio/CHIDataset/test', IMAGE_SIZE=100)
+b = MasterImage2(PATH=r'/home/lucapezz/Scrivania/Tirocinio/CHIDataset/training', IMAGE_SIZE=100)
 (x_train, y_train) = a.load_dataset() 
 (x_test, y_test) = b.load_dataset() 
 x_train = tf.convert_to_tensor(x_train, dtype=tf.float32)
@@ -79,10 +75,9 @@ if not os.path.exists(model_dir):
 # Setting up the metrics and the savers
 checkpoint = tf.train.Checkpoint(model=model)
 saver = tf.train.CheckpointManager(checkpoint, 'savers', max_to_keep=3)
-test_accuracy_adv = tf.keras.metrics.Accuracy()
+test_accuracy_adv = tf.keras.metrics.Accuracy() 
 test_accuracy_nat = tf.keras.metrics.Accuracy()
 writer = tf.summary.create_file_writer("tmp/mylogs")
-
 
 @tf.function
 def training(x_batch, y_batch):
@@ -140,7 +135,7 @@ training_time = 0
 start = timer()
 for epoch in range(10):
     print("\n---------------------Start of epoch %d---------------------" % epoch) 
-    for step,(x_train, y_train) in enumerate(unisa_train):
+    for step, (x_train, y_train) in enumerate(unisa_train):
         t_time = 0
         start_t = timer()
         x_batch_adv = attack.perturb(x_train, y_train)
@@ -149,8 +144,13 @@ for epoch in range(10):
         train_step(x_batch=x_train, y_batch=y_train, x_batch_adv=x_batch_adv, time=t_time, step=step)
         test_accuracy_adv.reset_states()
         test_accuracy_nat.reset_states()
+
+        with writer.as_default():
+            tf.summary.image("adv_images", x_batch_adv, step=global_step, max_outputs=batch_size)
+            tf.summary.image("nat_images", x_train, step=global_step, max_outputs=batch_size)
+
         writer.flush()
 
-end = timer()
-training_time += end - start
+    end = timer()
+    training_time += end - start
 
