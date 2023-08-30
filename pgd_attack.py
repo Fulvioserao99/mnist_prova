@@ -10,14 +10,14 @@ import json
 
 # Model building
 x_input = tf.keras.layers.Input(shape=(100, 100, 3), dtype=tf.float32)
-y_input = tf.keras.layers.Input(shape=(10,), dtype=tf.int64)
+y_input = tf.keras.layers.Input(shape=(20,), dtype=tf.int64)
 conv1 = tf.keras.layers.Conv2D(32, (5, 5), activation='relu', padding='same')(x_input)
 pool1 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)(conv1)
 conv2 = tf.keras.layers.Conv2D(64, (5, 5), activation='relu', padding='same')(pool1)
 pool2 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)(conv2)
 flatten = tf.keras.layers.Flatten()(pool2)
 fc1 = tf.keras.layers.Dense(1024, activation='relu')(flatten)
-output = tf.keras.layers.Dense(10)(fc1)
+output = tf.keras.layers.Dense(20)(fc1)
 model = tf.keras.models.Model(inputs=[x_input], outputs=output)
 
 
@@ -119,9 +119,9 @@ batch =  config['training_batch_size']
 # Caricamento del dataset MNIST
 (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
 x_train = np.expand_dims(x_train.astype(np.float32) / 255.0, axis=-1)
-y_train = tf.keras.utils.to_categorical(y_train, num_classes=10)
+y_train = tf.keras.utils.to_categorical(y_train, num_classes=20)
 x_test = np.expand_dims(x_test.astype(np.float32) / 255.0, axis=-1)
-y_test = tf.keras.utils.to_categorical(y_test, num_classes=10)
+y_test = tf.keras.utils.to_categorical(y_test, num_classes=20)
 
 
 '''# Addestramento del modello
