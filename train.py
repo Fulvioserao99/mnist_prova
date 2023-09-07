@@ -2,22 +2,19 @@ import tensorflow as tf
 from datetime import datetime
 import json
 import os
- 
-
 import numpy as np
 from timeit import default_timer as timer
 from pgd_attack import LinfPGDAttack
-from pippo import MasterImage
-from pippo import MasterImage2
+from dataset_input import MasterImage
+from dataset_input import MasterImage2
+from src import prnu
+from multiprocessing import cpu_count, Pool
     
-import tensorflow as tf
-from datetime import datetime
-import json
-import os
-import pickle 
+
+
     
 # Model building
-x_input = tf.keras.layers.Input(shape=(100, 100, 3), dtype=tf.float32)
+x_input = tf.keras.layers.Input(shape=(100, 100, 1), dtype=tf.float32)
 y_input = tf.keras.layers.Input(shape=(20,), dtype=tf.int64)
 conv1 = tf.keras.layers.Conv2D(32, (5, 5), activation='relu', padding='same')(x_input)
 pool1 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)(conv1)
@@ -39,12 +36,12 @@ num_checkpoint_steps = config['num_checkpoint_steps']
 batch_size = config['training_batch_size']
 
 # Setting up the data and the model
-a = MasterImage(PATH=r'E:\dataset\actual', IMAGE_SIZE=100)
-b = MasterImage2(PATH=r'E:\dataset\training', IMAGE_SIZE=100)
-(x_train, y_train) = a.load_dataset() 
-(x_test, y_test) = b.load_dataset() 
+train_ds = MasterImage(PATH=r'E:\dataset\training', IMAGE_SIZE=100)
+test_ds = MasterImage2(PATH=r'E:\dataset\testing', IMAGE_SIZE=100)
+(x_train, y_train) = train_ds.load_dataset() 
+(x_test, y_test) = test_ds.load_dataset() 
 
-x_train = tf.convert_to_tensor(x_train, dtype=tf.float32)
+#x_train = tf.convert_to_tensor(x_train, dtype=tf.float32)
 y_train = tf.one_hot(y_train, depth=20)
 x_test = tf.convert_to_tensor(x_test, dtype=tf.float32)
 y_test = tf.one_hot(y_test, depth=20)
@@ -80,6 +77,12 @@ saver = tf.train.CheckpointManager(checkpoint, 'savers', max_to_keep=3)
 test_accuracy_adv = tf.keras.metrics.Accuracy()
 test_accuracy_nat = tf.keras.metrics.Accuracy()
 writer = tf.summary.create_file_writer("tmp/mylogs")
+latest_checkpoint = saver.latest_checkpoint
+if latest_checkpoint:
+    checkpoint.restore(latest_checkpoint)
+    print("Modello ripristinato da:", latest_checkpoint)
+else:
+    print("Nessun checkpoint trovato.")
 
 
 @tf.function
@@ -107,9 +110,9 @@ def train_step(x_batch, x_batch_adv, y_batch, time, step):
     logits_adv, loss_adv = training(x_batch_adv, y_batch)
     logits_nat, loss_nat = training(x_batch, y_batch)
 
-    with writer.as_default():
+    ''' with writer.as_default():
             tf.summary.image("adv_images", x_batch_adv, step=global_step, max_outputs=batch_size)
-            tf.summary.image("nat_images", x_train, step=global_step, max_outputs=batch_size)
+            tf.summary.image("nat_images", x_train, step=global_step, max_outputs=batch_size)'''
 
     # Output to stdout
     if step % num_output_steps == 0:
@@ -137,6 +140,58 @@ def train_step(x_batch, x_batch_adv, y_batch, time, step):
     if step % num_checkpoint_steps == 0:
         tf.train.Checkpoint(model=model)
 
+
+def process_batch_of_images(batch, levels=4, sigma=5):
+    """
+    Process a batch of images using extract_single_aligned function.
+    :param batch: Input batch of images of shape (B, H, W, Ch) and type np.uint8.
+    :param levels: Number of wavelet decomposition levels.
+    :param sigma: Estimated noise power.
+    :return: TensorFlow tensor of PRNU for each image in the batch.
+    """
+    assert isinstance(batch, np.ndarray)
+    assert batch.ndim == 4
+
+    prnu_list = []
+    batch_uint8 = batch.astype(np.uint8)
+
+    for img in batch_uint8:
+        prnu = extract_aligned_s(img, levels, sigma)
+        prnu_list.append(prnu)
+
+    prnu_tensor = tf.convert_to_tensor(prnu_list, dtype=tf.float32)
+
+    return prnu_tensor
+
+def extract_aligned_s(img, levels=4, sigma=5):
+    """
+    Extract PRNU from a single image.
+    :param img: Input image of shape (H, W, Ch) and type np.uint8.
+    :param levels: Number of wavelet decomposition levels.
+    :param sigma: Estimated noise power.
+    :return: PRNU
+    """
+    assert isinstance(img, np.ndarray)
+    assert img.ndim == 3
+    assert img.dtype == np.uint8
+
+    h, w, ch = img.shape
+
+    RPsum = np.zeros((h, w, ch), np.float32)
+    NN = np.zeros((h, w, ch), np.float32)
+
+    nni = prnu.inten_sat_compact((img, levels, sigma))
+    NN += nni
+
+    wi = prnu.noise_extract_compact((img, levels, sigma))
+    RPsum += wi
+
+    K = RPsum / (NN + 1)
+    K = prnu.rgb2gray(K)
+    K = prnu.zero_mean_total(K)
+    K = prnu.wiener_dft(K, K.std(ddof=1)).astype(np.float32)
+
+    return K
     
 training_time = 0
 start = timer()
@@ -145,15 +200,18 @@ for epoch in range(10):
     for step,(x_train, y_train) in enumerate(unisa_train):
         t_time = 0
         start_t = timer()
-        x_batch_adv = attack.perturb(x_train, y_train)
+        x_train_np = x_train.numpy()
+        x_train_noise = process_batch_of_images(x_train_np)
+        x_batch_adv = attack.perturb(x_train_noise,y_train)
         end_t = timer()
         t_time += end_t - start_t
-        train_step(x_batch=x_train, y_batch=y_train, x_batch_adv=x_batch_adv, time=t_time, step=step)
+        train_step(x_batch=x_train_noise, y_batch=y_train, x_batch_adv=x_batch_adv, time=t_time, step=step)
         test_accuracy_adv.reset_states()
         test_accuracy_nat.reset_states()
         
 
         writer.flush()
+    print(step)
 
 end = timer()
 training_time += end - start

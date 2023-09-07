@@ -9,7 +9,7 @@ import json
 
 
 # Model building
-x_input = tf.keras.layers.Input(shape=(100, 100, 3), dtype=tf.float32)
+x_input = tf.keras.layers.Input(shape=(100, 100, 1), dtype=tf.float32)
 y_input = tf.keras.layers.Input(shape=(20,), dtype=tf.int64)
 conv1 = tf.keras.layers.Conv2D(32, (5, 5), activation='relu', padding='same')(x_input)
 pool1 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)(conv1)
@@ -82,6 +82,26 @@ class LinfPGDAttack:
       x = tf.clip_by_value(x, 0, 1) # assicura un range di pixel valido
 
     return x
+  
+
+  def perturb_prnu(self, prnu):
+    """
+    Perturba un dato PRNU aggiungendo rumore casuale entro un valore epsilon.
+    
+    :param prnu: PRNU originale (array numpy)
+    :param epsilon: Valore massimo della perturbazione
+    :return: PRNU perturbato
+    """
+    # Genera rumore casuale con la stessa forma del PRNU nell'intervallo [-epsilon, epsilon]
+    noise = np.random.uniform(-self.epsilon, self.epsilon, size=prnu.shape)
+    
+    # Aggiunge il rumore al PRNU
+    perturbed_prnu = prnu + noise
+    
+    # Assicura che i valori siano limitati tra 0 e 255 (range comune per PRNU)
+    perturbed_prnu = np.clip(perturbed_prnu, 0, 1)
+    
+    return perturbed_prnu
 
 
 
