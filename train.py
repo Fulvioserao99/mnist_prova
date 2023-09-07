@@ -4,17 +4,18 @@ import json
 import os
 import numpy as np
 from timeit import default_timer as timer
-from pgd_attack import LinfPGDAttack
 from dataset_input import MasterImage
 from dataset_input import MasterImage2
 from src import prnu
 from multiprocessing import cpu_count, Pool
-    
+from PIL import Image
+import os   
+import random
 
 
     
 # Model building
-x_input = tf.keras.layers.Input(shape=(100, 100, 1), dtype=tf.float32)
+x_input = tf.keras.layers.Input(shape=(100, 100, 3), dtype=tf.float32)
 y_input = tf.keras.layers.Input(shape=(20,), dtype=tf.int64)
 conv1 = tf.keras.layers.Conv2D(32, (5, 5), activation='relu', padding='same')(x_input)
 pool1 = tf.keras.layers.MaxPooling2D((2, 2), strides=2)(conv1)
@@ -41,7 +42,7 @@ test_ds = MasterImage2(PATH=r'E:\dataset\testing', IMAGE_SIZE=100)
 (x_train, y_train) = train_ds.load_dataset() 
 (x_test, y_test) = test_ds.load_dataset() 
 
-#x_train = tf.convert_to_tensor(x_train, dtype=tf.float32)
+x_train = tf.convert_to_tensor(x_train, dtype=tf.float32)
 y_train = tf.one_hot(y_train, depth=20)
 x_test = tf.convert_to_tensor(x_test, dtype=tf.float32)
 y_test = tf.one_hot(y_test, depth=20)
@@ -57,19 +58,6 @@ model.compile(optimizer=optimizer,
               loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True),
               metrics=tf.keras.metrics.Accuracy())
 
-# Set up adversary
-attack = LinfPGDAttack(model,
-                       config['epsilon'],
-                       config['k'],
-                       config['a'],
-                       config['random_start'],
-                       config['loss_func'])
-saver = tf.keras.Model.save_weights(model, 'savers/my_model_weights')
-
-# Setting up the Tensorboard and checkpoint outputs
-model_dir = config['model_dir']
-if not os.path.exists(model_dir):
-    os.makedirs(model_dir)
 
 # Setting up the metrics and the savers
 checkpoint = tf.train.Checkpoint(model=model)
@@ -78,11 +66,14 @@ test_accuracy_adv = tf.keras.metrics.Accuracy()
 test_accuracy_nat = tf.keras.metrics.Accuracy()
 writer = tf.summary.create_file_writer("tmp/mylogs")
 latest_checkpoint = saver.latest_checkpoint
+
 if latest_checkpoint:
     checkpoint.restore(latest_checkpoint)
     print("Modello ripristinato da:", latest_checkpoint)
+    
 else:
     print("Nessun checkpoint trovato.")
+
 
 
 @tf.function
@@ -110,9 +101,9 @@ def train_step(x_batch, x_batch_adv, y_batch, time, step):
     logits_adv, loss_adv = training(x_batch_adv, y_batch)
     logits_nat, loss_nat = training(x_batch, y_batch)
 
-    ''' with writer.as_default():
-            tf.summary.image("adv_images", x_batch_adv, step=global_step, max_outputs=batch_size)
-            tf.summary.image("nat_images", x_train, step=global_step, max_outputs=batch_size)'''
+    with writer.as_default():
+        tf.summary.image("adv_images", x_batch_adv, step=global_step, max_outputs=batch_size)
+        tf.summary.image("nat_images", x_train, step=global_step, max_outputs=batch_size)
 
     # Output to stdout
     if step % num_output_steps == 0:
@@ -138,7 +129,7 @@ def train_step(x_batch, x_batch_adv, y_batch, time, step):
             tf.summary.scalar("acc_adv", test_accuracy_adv.result(), step=step)
         
     if step % num_checkpoint_steps == 0:
-        tf.train.Checkpoint(model=model)
+        saver.save()
 
 
 def process_batch_of_images(batch, levels=4, sigma=5):
@@ -163,7 +154,7 @@ def process_batch_of_images(batch, levels=4, sigma=5):
 
     return prnu_tensor
 
-def extract_aligned_s(img, levels=4, sigma=5):
+def extract_aligned_s(img, levels=2, sigma=5):
     """
     Extract PRNU from a single image.
     :param img: Input image of shape (H, W, Ch) and type np.uint8.
@@ -173,7 +164,8 @@ def extract_aligned_s(img, levels=4, sigma=5):
     """
     assert isinstance(img, np.ndarray)
     assert img.ndim == 3
-    assert img.dtype == np.uint8
+    
+    img = img.astype(np.uint8)
 
     h, w, ch = img.shape
 
@@ -192,7 +184,38 @@ def extract_aligned_s(img, levels=4, sigma=5):
     K = prnu.wiener_dft(K, K.std(ddof=1)).astype(np.float32)
 
     return K
+
+
+# Directory contenente le cartelle con le immagini
+base_directory = r'E:\dataset\training'
+
+# Inizializza un array vuoto per memorizzare le prime immagini di ogni cartella
+prnu_sample = []
+
+# Scansione delle sottodirectory
+for cartella in os.listdir(base_directory):
+    cartella_completa = os.path.join(base_directory, cartella)
     
+    # Verifica se il percorso è una cartella
+    if os.path.isdir(cartella_completa):
+        # Trova tutti i file nella cartella
+        file_in_cartella = os.listdir(cartella_completa)
+        
+        # Filtra solo i file con estensione immagine (ad esempio, .jpg o .png)
+        immagini = [f for f in file_in_cartella if f.endswith(('.jpg', '.png', '.jpeg'))]
+        
+        # Se ci sono immagini nella cartella, aggiungi la prima all'array
+        if immagini:
+            prima_immagine = Image.open(os.path.join(cartella_completa, immagini[0]))
+            prima_immagine = tf.image.resize(prima_immagine, (100, 100))
+            prima_immagine = np.array(prima_immagine)
+            prnu_img = extract_aligned_s(prima_immagine)
+            prnu_sample.append(prnu_img)
+
+prnu_sample = np.array([np.array(img) for img in prnu_sample])
+
+img = tf.random.uniform((100, 100, 3))
+
 training_time = 0
 start = timer()
 for epoch in range(10):
@@ -200,18 +223,21 @@ for epoch in range(10):
     for step,(x_train, y_train) in enumerate(unisa_train):
         t_time = 0
         start_t = timer()
-        x_train_np = x_train.numpy()
-        x_train_noise = process_batch_of_images(x_train_np)
-        x_batch_adv = attack.perturb(x_train_noise,y_train)
+        rand_index = random.randint(0, len(prnu_sample) - 1)
+        rand_img = prnu_sample[rand_index]
+        img = rand_img
+        # Espandi img_da_sommare per avere una dimensione batch e canali
+        img_exp = tf.expand_dims(img, axis=0)  # Aggiunge una dimensione batch virtuale
+        img_exp = tf.expand_dims(img_exp, axis=-1)  # Aggiunge una dimensione canali virtuale
+        batch_sz = x_train.shape[0]
+        img_exp = tf.tile(img_exp, [batch_sz, 1, 1, 3])
+        x_batch_adv = x_train + img_exp
         end_t = timer()
         t_time += end_t - start_t
-        train_step(x_batch=x_train_noise, y_batch=y_train, x_batch_adv=x_batch_adv, time=t_time, step=step)
-        test_accuracy_adv.reset_states()
-        test_accuracy_nat.reset_states()
-        
-
-        writer.flush()
-    print(step)
+        train_step(x_batch=x_train, y_batch=y_train, x_batch_adv=x_batch_adv, time=t_time, step=step)
+    test_accuracy_adv.reset_states()
+    test_accuracy_nat.reset_states()
+    writer.flush()
 
 end = timer()
 training_time += end - start
